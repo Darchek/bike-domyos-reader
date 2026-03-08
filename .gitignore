@@ -1,0 +1,23 @@
+# Environment & secrets — never in the image
+.env
+.env.*
+!.env.example
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+
+# IDE
+.vscode/
+.idea/
+*.swp

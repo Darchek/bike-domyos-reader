@@ -1,0 +1,95 @@
+<html>
+    <head>
+        <title>Demo FTMS Treadmill Web Console</title>
+    </head>
+
+    <body>
+        <h1>Domyos Bike Controller</h1>
+        <button id="bleConnectionButton">Connect & Start Display</button>
+        <div id="stats" style="margin-top:20px; font-family: monospace; font-size: 1.2em;">
+            Speed: <span id="speed">0</span> km/h | Level: <span id="level">0</span>
+        </div>
+    </body>
+
+    <script>
+        const serviceISSC = "49535343-fe7d-4ae5-8fa9-9fafd205e455";
+        const characteristicData = "49535343-1e4d-4bd9-ba61-23c647249616";
+
+        let bikeCharacteristic;
+
+        document.querySelector('#bleConnectionButton').addEventListener('click', function() {
+            connect();
+        });
+
+        async function connect() {
+            try {
+                console.log('Requesting Domyos Device...');
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [{ namePrefix: 'Domyos' }],
+                    optionalServices: [serviceISSC]
+                });
+
+                console.log('Connecting to GATT...');
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService(serviceISSC);
+                bikeCharacteristic = await service.getCharacteristic(characteristicData);
+
+                // 1. Start Notifications to receive data
+                await bikeCharacteristic.startNotifications();
+                bikeCharacteristic.addEventListener('characteristicvaluechanged', handleNotifications);
+                console.log('Notifications started');
+
+                // 2. TALK BACK: Send the "Wake Up/Start" command
+                // Most Domyos consoles respond to a 'Start' command to show data.
+                // We send: F0 C2 02 02 (Common Domyos start/reset command)
+                await sendControlCommand([0xF0, 0xC2, 0x02, 0x02]);
+
+                console.log('Start command sent to bike console!');
+            } catch (error) {
+                console.log('Error: ' + error);
+            }
+        }
+
+        // Helper function to send bytes back to the bike
+        async function sendControlCommand(bytes) {
+            if (bikeCharacteristic) {
+                console.log("Sending command back!");
+                const data = new Uint8Array(bytes);
+                await bikeCharacteristic.writeValue(data);
+            }
+        }
+
+        function handleNotifications(event) {
+            let value = event.target.value;
+            let rawBytes = [];
+            let hexBytes = [];
+
+            for (let i = 0; i < value.byteLength; i++) {
+                let byte = value.getUint8(i);
+                rawBytes.push(byte);
+                hexBytes.push(byte.toString(16).padStart(2, '0').toUpperCase());
+            }
+
+            const hex = hexBytes.join(":")
+
+            // F0:BC:00:00:00:00:00:00:00:00:00:02:00:01:03:00:01:00:00:00:7F:00:09:00:01:3C
+            // F0:BC:00:00:00:00:00:00:00:00:00:02:00:01:02:00:01:00:00:00:7F:00:09:00:01:3B
+            // 00:01:02:03:04:05:06:07:08:09:10:11:12:13:14:15:16:17:18:19:20:21:22:23:24:25
+
+            const header = value.getUint8(0);
+            const level = value.getUint8(14);
+            const checksum = value.getUint8(25);
+
+            const speedKmh = value.getUint8(3) * 0.5;
+
+            console.log("Hex: " + hex);
+
+            document.getElementById('speed').textContent = speedKmh.toFixed(1);
+            document.getElementById('level').textContent = level;
+
+        }
+
+
+
+    </script>
+</html>

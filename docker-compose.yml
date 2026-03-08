@@ -1,0 +1,16 @@
+services:
+
+  domyos_service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        GITHUB_REPO_URL: https://github.com/Darchek/bike-domyos-reader
+        GITHUB_BRANCH: main
+    image: fastapi-app:latest
+    container_name: domyos_service
+    env_file:
+      - .env
+    ports:
+      - "14325:8000"
+    restart: unless-stopped
