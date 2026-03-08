@@ -9,12 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Clone the GitHub repo
-# Replace ARG values via --build-arg or override in docker-compose
-ARG GITHUB_REPO_URL=https://github.com/your-org/your-repo.git
-ARG GITHUB_BRANCH=main
-
-RUN git clone --depth 1 --branch ${GITHUB_BRANCH} ${GITHUB_REPO_URL} .
+COPY . .
 
 # Install Python dependencies into a separate layer
 RUN pip install --upgrade pip \
