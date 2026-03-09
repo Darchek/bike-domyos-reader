@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Optional
 from bleak import BleakClient
 from bleak.backends.characteristic import BleakGATTCharacteristic
+from config.http_client import HttpClient
 from config.settings import get_settings
 import logging
 
@@ -278,7 +279,8 @@ class DomyosReader:
 
     async def save_workout(self):
         if len(self.cardio.metrics) > 10 and self.cardio.metrics[-1].distance > 2:
-            await self.cardio.create()
+            self.cardio.calculate_averages()
+            asyncio.create_task(HttpClient.end_bike_session(self.cardio.model_dump(mode="json")))
         log.info(f"Discarding cardio distance is less than 2 km. "
                  f"Metrics {len(self.cardio.metrics)} - Distance: {self.cardio.metrics[-1].distance} km")
 
@@ -288,7 +290,7 @@ class DomyosReader:
 
     async def start_reader(self, device=None):
         self.device = device
-        self.cardio = CardioWorkout(type="cycling")
+        self.cardio = CardioWorkout()
         await self.run()
 
 

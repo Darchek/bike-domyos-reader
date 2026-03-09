@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # N8N
-    N8N_WEBHOOK_URL: str = ""
+    BACKEND_URL: str = ""
 
     # DATABASE
     DATABASE_URL: str = ""

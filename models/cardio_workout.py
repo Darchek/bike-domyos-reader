@@ -1,37 +1,31 @@
-from sqlalchemy import Column, Integer, Numeric, Text, DateTime, func, Computed
-from sqlalchemy.orm import relationship
-from config.database import AsyncSessionLocal
-from models.base import Base
 from models.bike_metric import BikeMetric
+from pydantic import BaseModel, field_validator
+from typing import Optional, List
+from datetime import datetime
 import logging
 
 log = logging.getLogger(__name__)
 
 
-class CardioWorkout(Base):
-    __tablename__ = "cardio_workouts"
-    __table_args__ = {"schema": "public"}
+class CardioWorkout(BaseModel):
+    id: Optional[int] = None
+    created_at: Optional[datetime] = datetime.now()
+    workout_date: Optional[datetime] = datetime.now()
+    type: str = 'cycling'
+    distance_km: Optional[float] = None
+    duration_min: Optional[float] = None
+    avg_speed_kmh: Optional[float] = None
+    calories: Optional[int] = None
+    notes: Optional[str] = None
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    workout_date = Column(DateTime, nullable=False, server_default=func.now())
-    type = Column(Text, nullable=False)
-    distance_km = Column(Numeric(6, 2))
-    duration_min = Column(Numeric(6, 2))
-    avg_speed_kmh = Column(Numeric(5, 2))
-    calories = Column(Integer)
-    notes = Column(Text)
-    created_at = Column(DateTime, server_default=func.now())
+    metrics: List[BikeMetric] = []
 
-    metrics = relationship("BikeMetric")
-
-
-    async def create(self):
-        self.calculate_averages()
-        async with AsyncSessionLocal() as db:
-            db.add(self)
-            await db.flush()
-            await db.commit()
-            await db.refresh(self)
+    @field_validator("created_at", "workout_date", mode="before")
+    @classmethod
+    def coerce_to_date(cls, v):
+        if isinstance(v, datetime):
+            return v.date()
+        return v
 
     def calculate_averages(self):
         if len(self.metrics) > 0 and self.metrics[-1].speed == 0:
