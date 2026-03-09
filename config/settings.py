@@ -6,6 +6,9 @@ class Settings(BaseSettings):
     # N8N
     N8N_WEBHOOK_URL: str = ""
 
+    # DATABASE
+    DATABASE_URL: str = ""
+
     # BLE Device
     DOMYOS_BIKE_ADDRESS: str = ""
 
@@ -16,7 +19,8 @@ class Settings(BaseSettings):
 
     # Server
     HOST: str = "0.0.0.0"
-    PORT: int = 8000
+    DEV_PORT: int = 8000
+    PROD_PORT: int = 8001
 
     # Logging
     LOG_LEVEL: str = "INFO"

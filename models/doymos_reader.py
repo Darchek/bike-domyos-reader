@@ -8,6 +8,8 @@ from bleak.backends.characteristic import BleakGATTCharacteristic
 from config.settings import get_settings
 import logging
 
+from models.bike_metric import BikeMetric
+from models.cardio_workout import CardioWorkout
 from models.passive_scanner import PassiveScanner
 
 log = logging.getLogger(__name__)
@@ -69,30 +71,6 @@ class WorkoutState:
             "watts":       round(self.watts, 1),
             "elapsed_s":   self.elapsed_s,
         }
-
-
-# ── Packet parser ─────────────────────────────────────────────────────────────
-
-def parse_packet(data: bytes, state: WorkoutState) -> bool:
-    """Parse a 26-byte notification from the machine."""
-    if len(data) != 26:
-        return False
-    state.packets += 1
-    state.speed_kmh     = ((data[6] << 8) | data[7]) / 10.0
-    state.cadence_rpm   = data[9] if data[9] > 0 else 0
-    state.calories_kcal = (data[10] << 8) | data[11]
-    state.distance_km   = ((data[12] << 8) | data[13]) / 10.0
-    res = data[14]
-    if 1 <= res <= 15:
-        state.resistance = res
-    state.heart_rate = data[18]
-    incl = data[21]
-    if 0 <= incl <= 15:
-        state.inclination = incl
-    btn = data[22]
-    state.button = "▲ Incline UP" if btn == 0x06 else ("▼ Incline DOWN" if btn == 0x07 else "")
-    state.watts = state.calc_watts()
-    return True
 
 
 # ── Display packets  (machine screen keep-alive) ──────────────────────────────
@@ -165,65 +143,67 @@ def build_display_packets(state: WorkoutState) -> list[tuple[bytes, bytes]]:
         (bytes(b[:20]), bytes(b[20:])),
     ]
 
-
-# ── Display (terminal) ────────────────────────────────────────────────────────
-
-def print_dashboard(state: WorkoutState):
-    h, rem = divmod(state.elapsed_s, 3600)
-    m, s   = divmod(rem, 60)
-    elapsed_str = f"{h:02d}:{m:02d}:{s:02d}"
-    print(
-        f"\r⏱ {elapsed_str} | "
-        f"spd:{state.speed_kmh:4.1f}km/h | "
-        f"cad:{state.cadence_rpm:3d}rpm | "
-        f"pwr:{state.watts:5.0f}W | "
-        f"hr:{state.heart_rate:3d}bpm | "
-        f"res:{state.resistance:2d}/15 | "
-        f"incl:{state.inclination:2d}/15 | "
-        f"dist:{state.distance_km:.2f}km | "
-        f"cal:{state.calories_kcal:4d}kcal",
-        end="", flush=True,
-    )
-
 # ── Main reader ───────────────────────────────────────────────────────────────
 
 class DomyosReader:
 
+    CONNECTION_ELAPSED_TIME = 5
+
     def __init__(self):
-        self.address  = get_settings().DOMYOS_BIKE_ADDRESS
-        self.state    = WorkoutState()
-        self._start:      Optional[float] = None
-        self._client:     Optional[BleakClient] = None
+        self.device = None
+        self.state = WorkoutState()
+        self._start: Optional[float] = None
+        self._client: Optional[BleakClient] = None
         self._display_tick = 0   # counts 300ms ticks; send display every ~1 s (tick 3)
         self._scanner: PassiveScanner | None = None
-        self.workout = []
+        self.cardio = None
 
-    def _on_notify(self, char: BleakGATTCharacteristic, data: bytearray):
+    def parse_packet(self, data: bytes) -> BikeMetric | None:
+        """Parse a 26-byte notification from the machine."""
+        if len(data) != 26:
+            return None
+        metric = BikeMetric()
+        metric.idx = len(self.cardio.metrics) + 1
+        metric.speed = ((data[6] << 8) | data[7]) / 10.0
+        metric.cadence = data[9] if data[9] > 0 else 0
+        metric.calories = (data[10] << 8) | data[11]
+        metric.distance = ((data[12] << 8) | data[13]) / 10.0
+        metric.measured_at = datetime.now()
+        res = data[14]
+        if 1 <= res <= 15:
+            metric.resistance = res
+        metric.heart_rate = data[18]
+        # incl = data[21]
+        # if 0 <= incl <= 15:
+        #     state.inclination = incl
+        # btn = data[22]
+        # state.button = "▲ Incline UP" if btn == 0x06 else ("▼ Incline DOWN" if btn == 0x07 else "")
+        # state.watts = state.calc_watts()
+        return metric
+
+    async def _on_notify(self, char: BleakGATTCharacteristic, data: bytearray):
         raw = bytes(data)
         if len(raw) != 26:
             return
-        if self._start:
-            self.state.elapsed_s = int(time.time() - self._start)
-        if not parse_packet(raw, self.state):
+        bike_metric = self.parse_packet(raw)
+        if not bike_metric:
             return
 
         # State
-        if self.state.speed_kmh == 0.0 and self._scanner.status != 'idle':
+        if bike_metric.speed == 0.0 and self._scanner.status != 'idle':
             self._scanner.set_idle()
             log.info("State is idle!")
-        elif self.state.speed_kmh > 0.0 and self._scanner.status != 'running':
+        elif bike_metric.speed > 0.0 and self._scanner.status != 'running':
             self._scanner.set_running()
 
-        self.workout.append(self.state)
-        # print_dashboard(self.state)
-
-        print(f"_on_notify -> Speed {self.state.speed_kmh} - Distance: {self.state.distance_km}", len(self.workout))
-
+        res = self.cardio.add_metric(bike_metric)
+        if res == "added":
+            log.info(f"Speed {bike_metric.speed} - Distance: {bike_metric.distance} - Calories: {bike_metric.calories}")
 
         # loop = asyncio.get_event_loop()
         # loop.create_task(self._client.write_gatt_char(get_settings().DOMYOS_WRITE, raw, response=False))
 
-    async def _send_display(self):
+    async def send_display(self):
         """
         Send both display packets to keep the machine screen alive.
         Called once per second.
@@ -237,72 +217,75 @@ class DomyosReader:
         A short sleep after each full packet gives the machine time to process
         and update its display before the next packet arrives.
         """
-        if self._client is None or not self._client.is_connected:
-            return
-        for part1, part2 in build_display_packets(self.state):
-            await self._client.write_gatt_char(get_settings().DOMYOS_WRITE, part1, response=False)
-            await self._client.write_gatt_char(get_settings().DOMYOS_WRITE, part2, response=True)
-            await asyncio.sleep(0.05)  # let machine digest before next packet
+        try:
+            if self._client is None or not self._client.is_connected:
+                return
+            for part1, part2 in build_display_packets(self.state):
+                await self._client.write_gatt_char(get_settings().DOMYOS_WRITE, part1, response=True)
+                await self._client.write_gatt_char(get_settings().DOMYOS_WRITE, part2, response=True)
+                await asyncio.sleep(0.05)  # let machine digest before next packet
+        except Exception as e:
+            log.error(f"Error when sending display packets {e}")
+
+    async def send_init_seq(self):
+        await asyncio.sleep(0.5)
+        log.info("🔧  Sending init sequence…")
+        for idx, pkt in enumerate(INIT_SEQ):
+            await self._client.write_gatt_char(get_settings().DOMYOS_WRITE, pkt, response=True)
+            await asyncio.sleep(0.05)
 
     async def run(self):
+        address = get_settings().DOMYOS_BIKE_ADDRESS
+        first_time = time.time()
+        try:
+            log.info(f"\n🔗  Connecting to {address} …")
+            async with BleakClient(self.device, timeout=15.0) as client:
+                self._client = client
+                log.info(f"✅  Connected (MTU {client.mtu_size})")
 
-        log.info(f"\n🔗  Connecting to {self.address} …")
+                service_uuids = [s.uuid for s in client.services]
+                if get_settings().DOMYOS_SERVICE not in service_uuids:
+                    log.info("\n⚠️  Domyos UART service not found. Available services:")
+                    for svc in client.services:
+                        log.info(f"   {svc.uuid}  {svc.description}")
+                    return
 
-        async with BleakClient(self.address, timeout=15.0) as client:
-            self._client = client
-            log.info(f"✅  Connected (MTU {client.mtu_size})")
+                elapsed = time.time() - first_time
+                wait_time = self.CONNECTION_ELAPSED_TIME - elapsed
+                log.info("Elapsed time for connection: {0:.2f}s -  Waiting time: {1:.2f}s".format(elapsed, wait_time))
+                if wait_time > 0:
+                    await asyncio.sleep(wait_time)
 
-            service_uuids = [s.uuid for s in client.services]
-            if get_settings().DOMYOS_SERVICE not in service_uuids:
-                log.info("\n⚠️  Domyos UART service not found. Available services:")
-                for svc in client.services:
-                    log.info(f"   {svc.uuid}  {svc.description}")
-                return
+                await client.start_notify(get_settings().DOMYOS_NOTIFY, self._on_notify)
+                log.info("📬  Subscribed to notify characteristic")
 
-            await client.start_notify(get_settings().DOMYOS_NOTIFY, self._on_notify)
-            log.info("📬  Subscribed to notify characteristic")
+                await self.send_init_seq()
 
-            log.info("🔧  Sending init sequence…")
-            for pkt in INIT_SEQ:
-                await client.write_gatt_char(get_settings().DOMYOS_WRITE, pkt, response=False)
-                await asyncio.sleep(0.05)
+                # Send an initial display update immediately so screen never blanks
+                # await self.send_display()
+                self._start = time.time()
+                log.info("✅  Ready — screen + Python both active")
 
-            # Send an initial display update immediately so screen never blanks
-            await self._send_display()
-            self._start = time.time()
-            log.info("✅  Ready — screen + Python both active")
+                while client.is_connected:
+                    await asyncio.sleep(0.5)
 
-            while client.is_connected:
-                await asyncio.sleep(0.5)
+            log.info(f"Workout has ended. Total packets {len(self.cardio.metrics)}")
+            await self.save_workout()
+            self._scanner.set_stopped()
+            self._client = None
+        except Exception as e:
+            log.error(f"Error when connecting to bluetooth client: {e}")
 
-        log.info(f"Workout has ended. Total packets {self.state.packets}")
-        self._scanner.set_stopped()
-        self._client = None
-        self._summary()
-
-    def _summary(self):
-        s = self.state
-        h, rem = divmod(s.elapsed_s, 3600)
-        m, sec = divmod(rem, 60)
-        text = f"\n{'─'*48}"
-        text += f"📊  Session Summary"
-        text += f"{'─'*48}"
-        text += f"  Duration   : {h:02d}:{m:02d}:{sec:02d}"
-        text += f"  Distance   : {s.distance_km:.2f} km"
-        text += f"  Calories   : {s.calories_kcal} kcal"
-        text += f"  Packets    : {s.packets}"
-        text += f"  Last speed : {s.speed_kmh:.1f} km/h"
-        text += f"  Last cad.  : {s.cadence_rpm} rpm"
-        text += f"  Last power : {s.watts:.0f} W"
-        text += f"  Last HR    : {s.heart_rate} bpm"
-        text += f"{'─'*48}"
-        log.info(text)
+    async def save_workout(self):
+        await self.cardio.create()
 
     async def start_scanner(self):
         self._scanner = PassiveScanner(self.start_reader)
         await self._scanner.start()
 
-    async def start_reader(self):
+    async def start_reader(self, device=None):
+        self.device = device
+        self.cardio = CardioWorkout(type="cycling")
         await self.run()
 
 

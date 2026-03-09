@@ -1,3 +1,5 @@
+import asyncio
+
 import requests
 from bleak import BleakScanner
 from config.settings import get_settings
@@ -12,18 +14,22 @@ class PassiveScanner:
         self.status = "stopped"
         self.start_reader = start_reader
 
-    def send_notification(self):
-        response = requests.get(get_settings().N8N_WEBHOOK_URL)
-        data = response.json()
-        log.info(data)
-        return True
+    async def send_notification(self):
+        try:
+            response = requests.get(get_settings().N8N_WEBHOOK_URL, timeout=1)
+            data = response.json()
+            log.info(data)
+            return True
+        except Exception as e:
+            log.error(f"Request error: {e}")
+            return False
 
     async def detection_callback(self, device, advertisement_data):
         if device.address == get_settings().DOMYOS_BIKE_ADDRESS and self.status == "stopped":
             log.info(f"Bike detected: {device.address}")
             self.set_running()
-            self.send_notification()
-            await self.start_reader()
+            asyncio.create_task(self.send_notification())
+            await self.start_reader(device)
 
     async def start(self):
         scanner = BleakScanner(self.detection_callback)

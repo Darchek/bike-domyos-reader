@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sys
 from contextlib import asynccontextmanager
 from datetime import datetime
 from fastapi import FastAPI
@@ -38,6 +39,16 @@ app = FastAPI(
 async def health():
     return {"status": "ok", "timestamp": datetime.now().isoformat()}
 
+@app.get("/init-seq", summary="Send init sequence")
+async def init_sequence():
+    await bike_reader.send_init_seq()
+    return {"status": "sending sequence...", "timestamp": datetime.now().isoformat()}
+
+@app.get("/send-display-seq", summary="Send display")
+async def send_display():
+    await bike_reader.send_display()
+    return {"status": "Send display", "timestamp": datetime.now().isoformat()}
+
 
 app.include_router(workout_router)
 
@@ -48,4 +59,9 @@ app.include_router(workout_router)
 if __name__ == "__main__":
     import uvicorn
     settings = get_settings()
-    uvicorn.run(app, host=settings.HOST, port=settings.PORT, reload=False)
+    if len(sys.argv) > 1 and sys.argv[1] == "--prod":
+        log.info("Starting production server...")
+        uvicorn.run(app, host=settings.HOST, port=settings.DEV_PORT, reload=False)
+    else:
+        log.info("Starting development server...")
+        uvicorn.run(app, host=settings.HOST, port=settings.DEV_PORT, reload=False)
