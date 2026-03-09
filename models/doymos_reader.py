@@ -277,7 +277,10 @@ class DomyosReader:
             log.error(f"Error when connecting to bluetooth client: {e}")
 
     async def save_workout(self):
-        await self.cardio.create()
+        if len(self.cardio.metrics) > 10 and self.cardio.metrics[-1].distance > 2:
+            await self.cardio.create()
+        log.info(f"Discarding cardio distance is less than 2 km. "
+                 f"Metrics {len(self.cardio.metrics)} - Distance: {self.cardio.metrics[-1].distance} km")
 
     async def start_scanner(self):
         self._scanner = PassiveScanner(self.start_reader)

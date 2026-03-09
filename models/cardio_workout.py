@@ -38,9 +38,9 @@ class CardioWorkout(Base):
             self.metrics.pop()
         idx = next((i for i in range(len(self.metrics) - 1, -1, -1) if self.metrics[i].speed != 0), None)
         self.distance_km = self.metrics[idx].distance
-        self.avg_speed_kmh = self.metrics[idx].speed
+        self.avg_speed_kmh = sum(m.speed for m in self.metrics) / len(self.metrics)
         delta = self.metrics[idx].measured_at - self.metrics[0].measured_at
-        self.duration_min = round(delta.total_seconds() / 60, 2)
+        self.duration_min = round((delta.total_seconds() - 10) / 60, 2)
         self.calories = self.metrics[idx].calories
         log.info(f"Distance {self.distance_km} km - Duration {self.duration_min} min - Speed {self.avg_speed_kmh} km/h")
         return True
