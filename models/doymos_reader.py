@@ -280,9 +280,11 @@ class DomyosReader:
     async def save_workout(self):
         if len(self.cardio.metrics) > 10 and self.cardio.metrics[-1].distance > 2:
             self.cardio.calculate_averages()
+            self.cardio.save_cardio_file()
             asyncio.create_task(HttpClient.end_bike_session(self.cardio.model_dump(mode="json")))
-        log.info(f"Discarding cardio distance is less than 2 km. "
-                 f"Metrics {len(self.cardio.metrics)} - Distance: {self.cardio.metrics[-1].distance} km")
+        else:
+            log.info(f"Discarding cardio distance is less than 2 km. "
+                     f"Metrics {len(self.cardio.metrics)} - Distance: {self.cardio.metrics[-1].distance} km")
 
     async def start_scanner(self):
         self._scanner = PassiveScanner(self.start_reader)

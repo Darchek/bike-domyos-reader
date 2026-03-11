@@ -1,3 +1,5 @@
+import json
+
 from models.bike_metric import BikeMetric
 from pydantic import BaseModel, field_validator
 from typing import Optional, List
@@ -19,13 +21,6 @@ class CardioWorkout(BaseModel):
     notes: Optional[str] = None
 
     metrics: List[BikeMetric] = []
-
-    @field_validator("created_at", "workout_date", mode="before")
-    @classmethod
-    def coerce_to_date(cls, v):
-        if isinstance(v, datetime):
-            return v.date()
-        return v
 
     def calculate_averages(self):
         if len(self.metrics) > 0 and self.metrics[-1].speed == 0:
@@ -53,3 +48,11 @@ class CardioWorkout(BaseModel):
             return "reset"
         self.metrics.append(metric)
         return "added"
+
+    def save_cardio_file(self):
+        try:
+            date_str = datetime.today().strftime("%Y_%m_%d")
+            with open(f"files/session_{date_str}.json", "w") as f:
+                f.write(json.dumps(self.model_dump(mode="json")))
+        except Exception as e:
+            log.error(f"Error when saving file. Error: {e}")

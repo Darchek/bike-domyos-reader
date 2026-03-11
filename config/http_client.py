@@ -23,7 +23,7 @@ class HttpClient:
         try:
             response = requests.post(f"{get_settings().BACKEND_URL}/bike", json=payload, timeout=10)
             data = response.json()
-            log.info(data)
+            log.info(f"Bike session registered successfully. ID: {data['id']}")
             return True
         except Exception as e:
             log.error(f"Request error: {e}")
