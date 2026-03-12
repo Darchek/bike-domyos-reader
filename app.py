@@ -18,12 +18,15 @@ log = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    task = asyncio.create_task(bike_reader.start_scanner())
+    bike_task = asyncio.create_task(bike_reader.start_bike_scanner())
+    polar_task = asyncio.create_task(bike_reader.start_polar_scanner())
     log.info("BLE background task started.")
     yield
-    task.cancel()
+    bike_task.cancel()
+    polar_task.cancel()
     try:
-        await task
+        await bike_task
+        await polar_task
     except asyncio.CancelledError:
         log.info("BLE background task stopped.")
 

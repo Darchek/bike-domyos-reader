@@ -12,6 +12,7 @@ import logging
 from models.bike_metric import BikeMetric
 from models.cardio_workout import CardioWorkout
 from models.passive_scanner import PassiveScanner
+from models.polar_reader import PolarReader
 
 log = logging.getLogger(__name__)
 
@@ -157,6 +158,7 @@ class DomyosReader:
         self._client: Optional[BleakClient] = None
         self._display_tick = 0   # counts 300ms ticks; send display every ~1 s (tick 3)
         self._scanner: PassiveScanner | None = None
+        self._polar: PolarReader | None = None
         self.cardio = None
 
     def parse_packet(self, data: bytes) -> BikeMetric | None:
@@ -173,7 +175,8 @@ class DomyosReader:
         res = data[14]
         if 1 <= res <= 15:
             metric.resistance = res
-        metric.heart_rate = data[18]
+        metric.heart_rate = self._polar.get_heart_rate()
+        # metric.heart_rate = data[18]
         # incl = data[21]
         # if 0 <= incl <= 15:
         #     state.inclination = incl
@@ -199,7 +202,8 @@ class DomyosReader:
 
         res = self.cardio.add_metric(bike_metric)
         if res == "added":
-            log.info(f"Speed {bike_metric.speed} - Distance: {bike_metric.distance} - Calories: {bike_metric.calories}")
+            log.info(f"Speed {bike_metric.speed} - Distance: {bike_metric.distance} - "
+                     f"Heart rate: {bike_metric.heart_rate} - Calories: {bike_metric.calories}")
 
         # loop = asyncio.get_event_loop()
         # loop.create_task(self._client.write_gatt_char(get_settings().DOMYOS_WRITE, raw, response=False))
@@ -286,9 +290,13 @@ class DomyosReader:
             log.info(f"Discarding cardio distance is less than 2 km. "
                      f"Metrics {len(self.cardio.metrics)} - Distance: {self.cardio.metrics[-1].distance} km")
 
-    async def start_scanner(self):
+    async def start_bike_scanner(self):
         self._scanner = PassiveScanner(self.start_reader)
         await self._scanner.start()
+
+    async def start_polar_scanner(self):
+        self._polar = PolarReader()
+        await self._polar.start()
 
     async def start_reader(self, device=None):
         self.device = device
