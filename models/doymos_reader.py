@@ -1,7 +1,7 @@
 import asyncio
 import math
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 from bleak import BleakClient
 from bleak.backends.characteristic import BleakGATTCharacteristic
@@ -183,6 +183,7 @@ class DomyosReader:
         # btn = data[22]
         # state.button = "▲ Incline UP" if btn == 0x06 else ("▼ Incline DOWN" if btn == 0x07 else "")
         # state.watts = state.calc_watts()
+        self.state = metric
         return metric
 
     async def _on_notify(self, char: BleakGATTCharacteristic, data: bytearray):
@@ -261,14 +262,13 @@ class DomyosReader:
                 if wait_time > 0:
                     await asyncio.sleep(wait_time)
 
+                self._start = time.time()
                 await client.start_notify(get_settings().DOMYOS_NOTIFY, self._on_notify)
                 log.info("📬  Subscribed to notify characteristic")
-
                 await self.send_init_seq()
 
                 # Send an initial display update immediately so screen never blanks
                 # await self.send_display()
-                self._start = time.time()
                 log.info("✅  Ready — screen + Python both active")
 
                 while client.is_connected:
@@ -302,6 +302,49 @@ class DomyosReader:
         self.device = device
         self.cardio = CardioWorkout()
         await self.run()
+
+    # RESISTANCE
+
+    async def force_resistance(self, level: int):
+        """
+        Send a resistance command to the Domyos bike.
+
+        Args:
+            level: Resistance level 1-15
+        """
+        if self._client is None or not self._client.is_connected:
+            log.warning("Cannot set resistance: not connected")
+            return
+
+        level = max(1, min(15, level))  # clamp to valid range
+
+        # Build the 23-byte resistance packet (from qdomyos-zwift forceResistance)
+        pkt = bytearray([
+            0xf0, 0xad, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x01, 0xff,
+            0xff, 0xff, 0x00
+        ])
+
+        pkt[10] = level  # resistance value at byte index 10
+
+        # Checksum: sum of bytes 0..21, mod 256
+        pkt[22] = sum(pkt[:22]) & 0xFF
+
+        # Split into two writes (20 + 3) just like QZ does
+        write_uuid = get_settings().DOMYOS_WRITE
+        await self._client.write_gatt_char(write_uuid, bytes(pkt[:20]), response=True)
+        await self._client.write_gatt_char(write_uuid, bytes(pkt[20:]), response=True)
+
+        log.info(f"🎚️  Resistance set to {level}")
+
+    async def increase_resistance(self):
+        current = self.state.resistance if self.state.resistance > 0 else 1
+        await self.force_resistance(current + 1)
+
+    async def decrease_resistance(self):
+        """Decrease resistance by 1 (min 1)."""
+        current = self.state.resistance
+        await self.force_resistance(current - 1)
 
 
 bike_reader = DomyosReader()

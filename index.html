@@ -1,95 +1,239 @@
-<html>
-    <head>
-        <title>Demo FTMS Treadmill Web Console</title>
-    </head>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Workout Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
-    <body>
-        <h1>Domyos Bike Controller</h1>
-        <button id="bleConnectionButton">Connect & Start Display</button>
-        <div id="stats" style="margin-top:20px; font-family: monospace; font-size: 1.2em;">
-            Speed: <span id="speed">0</span> km/h | Level: <span id="level">0</span>
-        </div>
-    </body>
+    body {
+      background: #0d0d0d;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px;
+    }
 
-    <script>
-        const serviceISSC = "49535343-fe7d-4ae5-8fa9-9fafd205e455";
-        const characteristicData = "49535343-1e4d-4bd9-ba61-23c647249616";
+    header {
+      width: 100%;
+      max-width: 860px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+    }
 
-        let bikeCharacteristic;
+    h1 { font-size: 1.4rem; font-weight: 600; letter-spacing: 0.05em; color: #fff; }
 
-        document.querySelector('#bleConnectionButton').addEventListener('click', function() {
-            connect();
-        });
+    #status {
+      font-size: 0.75rem;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #1e1e1e;
+      color: #888;
+    }
+    #status.live { background: #0f2e18; color: #4ade80; }
+    #status.error { background: #2e0f0f; color: #f87171; }
 
-        async function connect() {
-            try {
-                console.log('Requesting Domyos Device...');
-                const device = await navigator.bluetooth.requestDevice({
-                    filters: [{ namePrefix: 'Domyos' }],
-                    optionalServices: [serviceISSC]
-                });
+    #timestamp { font-size: 0.7rem; color: #555; margin-top: 4px; text-align: right; }
 
-                console.log('Connecting to GATT...');
-                const server = await device.gatt.connect();
-                const service = await server.getPrimaryService(serviceISSC);
-                bikeCharacteristic = await service.getCharacteristic(characteristicData);
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+      gap: 16px;
+      width: 100%;
+      max-width: 860px;
+    }
 
-                // 1. Start Notifications to receive data
-                await bikeCharacteristic.startNotifications();
-                bikeCharacteristic.addEventListener('characteristicvaluechanged', handleNotifications);
-                console.log('Notifications started');
+    .card {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 12px;
+      padding: 20px 16px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: border-color 0.3s;
+    }
+    .card.highlight { border-color: #3b82f6; }
 
-                // 2. TALK BACK: Send the "Wake Up/Start" command
-                // Most Domyos consoles respond to a 'Start' command to show data.
-                // We send: F0 C2 02 02 (Common Domyos start/reset command)
-                await sendControlCommand([0xF0, 0xC2, 0x02, 0x02]);
+    .card-label {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #555;
+    }
 
-                console.log('Start command sent to bike console!');
-            } catch (error) {
-                console.log('Error: ' + error);
-            }
-        }
+    .card-value {
+      font-size: 2.2rem;
+      font-weight: 700;
+      line-height: 1;
+      color: #fff;
+      transition: color 0.3s;
+    }
 
-        // Helper function to send bytes back to the bike
-        async function sendControlCommand(bytes) {
-            if (bikeCharacteristic) {
-                console.log("Sending command back!");
-                const data = new Uint8Array(bytes);
-                await bikeCharacteristic.writeValue(data);
-            }
-        }
+    .card-unit {
+      font-size: 0.75rem;
+      color: #666;
+    }
 
-        function handleNotifications(event) {
-            let value = event.target.value;
-            let rawBytes = [];
-            let hexBytes = [];
+    /* Color accents per metric */
+    .card[data-key="speed_kmh"]   .card-value { color: #60a5fa; }
+    .card[data-key="heart_rate"]  .card-value { color: #f87171; }
+    .card[data-key="watts"]       .card-value { color: #facc15; }
+    .card[data-key="cadence_rpm"] .card-value { color: #a78bfa; }
+    .card[data-key="distance_km"] .card-value { color: #34d399; }
+    .card[data-key="calories"]    .card-value { color: #fb923c; }
+    .card[data-key="elapsed_s"]   .card-value { color: #94a3b8; }
 
-            for (let i = 0; i < value.byteLength; i++) {
-                let byte = value.getUint8(i);
-                rawBytes.push(byte);
-                hexBytes.push(byte.toString(16).padStart(2, '0').toUpperCase());
-            }
+    /* elapsed timer spans two columns */
+    .card[data-key="elapsed_s"] { grid-column: span 2; }
 
-            const hex = hexBytes.join(":")
+    .bar-wrap {
+      margin-top: 6px;
+      height: 4px;
+      background: #2a2a2a;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 0.5s ease;
+    }
+    .card[data-key="resistance"]  .bar-fill { background: #f87171; }
+    .card[data-key="inclination"] .bar-fill { background: #facc15; }
+  </style>
+</head>
+<body>
 
-            // F0:BC:00:00:00:00:00:00:00:00:00:02:00:01:03:00:01:00:00:00:7F:00:09:00:01:3C
-            // F0:BC:00:00:00:00:00:00:00:00:00:02:00:01:02:00:01:00:00:00:7F:00:09:00:01:3B
-            // 00:01:02:03:04:05:06:07:08:09:10:11:12:13:14:15:16:17:18:19:20:21:22:23:24:25
+<header>
+  <div>
+    <h1>Workout Live</h1>
+    <div id="timestamp">—</div>
+  </div>
+  <div id="status">connecting…</div>
+</header>
 
-            const header = value.getUint8(0);
-            const level = value.getUint8(14);
-            const checksum = value.getUint8(25);
+<div class="grid">
+  <div class="card" data-key="speed_kmh">
+    <div class="card-label">Speed</div>
+    <div class="card-value" id="val-speed_kmh">—</div>
+    <div class="card-unit">km/h</div>
+  </div>
 
-            const speedKmh = value.getUint8(3) * 0.5;
+  <div class="card" data-key="cadence_rpm">
+    <div class="card-label">Cadence</div>
+    <div class="card-value" id="val-cadence_rpm">—</div>
+    <div class="card-unit">rpm</div>
+  </div>
 
-            console.log("Hex: " + hex);
+  <div class="card" data-key="heart_rate">
+    <div class="card-label">Heart Rate</div>
+    <div class="card-value" id="val-heart_rate">—</div>
+    <div class="card-unit">bpm</div>
+  </div>
 
-            document.getElementById('speed').textContent = speedKmh.toFixed(1);
-            document.getElementById('level').textContent = level;
+  <div class="card" data-key="watts">
+    <div class="card-label">Power</div>
+    <div class="card-value" id="val-watts">—</div>
+    <div class="card-unit">W</div>
+  </div>
 
-        }
+  <div class="card" data-key="distance_km">
+    <div class="card-label">Distance</div>
+    <div class="card-value" id="val-distance_km">—</div>
+    <div class="card-unit">km</div>
+  </div>
 
+  <div class="card" data-key="calories">
+    <div class="card-label">Calories</div>
+    <div class="card-value" id="val-calories">—</div>
+    <div class="card-unit">kcal</div>
+  </div>
 
+  <div class="card" data-key="resistance">
+    <div class="card-label">Resistance</div>
+    <div class="card-value" id="val-resistance">—</div>
+    <div class="card-unit">/ 15</div>
+    <div class="bar-wrap"><div class="bar-fill" id="bar-resistance" style="width:0%"></div></div>
+  </div>
 
-    </script>
+  <div class="card" data-key="inclination">
+    <div class="card-label">Inclination</div>
+    <div class="card-value" id="val-inclination">—</div>
+    <div class="card-unit">/ 15</div>
+    <div class="bar-wrap"><div class="bar-fill" id="bar-inclination" style="width:0%"></div></div>
+  </div>
+
+  <div class="card" data-key="elapsed_s">
+    <div class="card-label">Elapsed</div>
+    <div class="card-value" id="val-elapsed_s">—</div>
+    <div class="card-unit">hh:mm:ss</div>
+  </div>
+</div>
+
+<script>
+  const POLL_MS = 1000;
+
+  function fmtElapsed(s) {
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    return [h, m, sec].map(v => String(v).padStart(2, '0')).join(':');
+  }
+
+  async function fetchState() {
+    const statusEl = document.getElementById('status');
+    try {
+      const res = await fetch('/workout/current');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const d = await res.json();
+
+      statusEl.textContent = 'live';
+      statusEl.className = 'live';
+      document.getElementById('timestamp').textContent = d.timestamp ?? '';
+
+      const set = (key, val) => {
+        const el = document.getElementById(`val-${key}`);
+        if (el) el.textContent = val ?? '—';
+      };
+
+      set('speed_kmh',   d.speed_kmh);
+      set('cadence_rpm', d.cadence_rpm);
+      set('heart_rate',  d.heart_rate);
+      set('watts',       d.watts);
+      set('distance_km', d.distance_km);
+      set('calories',    d.calories);
+      set('resistance',  d.resistance);
+      set('inclination', d.inclination);
+      set('elapsed_s',   fmtElapsed(d.elapsed_s ?? 0));
+
+      // progress bars (max 15)
+      document.getElementById('bar-resistance').style.width  = `${((d.resistance  ?? 0) / 15) * 100}%`;
+      document.getElementById('bar-inclination').style.width = `${((d.inclination ?? 0) / 15) * 100}%`;
+
+      // highlight active cards
+      document.querySelectorAll('.card').forEach(card => {
+        const key = card.dataset.key;
+        const active = key === 'elapsed_s'
+          ? (d.elapsed_s > 0)
+          : (Number(d[key]) > 0);
+        card.classList.toggle('highlight', active);
+      });
+
+    } catch (e) {
+      statusEl.textContent = 'offline';
+      statusEl.className = 'error';
+    }
+  }
+
+  fetchState();
+  setInterval(fetchState, POLL_MS);
+</script>
+</body>
 </html>
