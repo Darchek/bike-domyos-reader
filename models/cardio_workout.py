@@ -1,7 +1,6 @@
 import json
-
 from models.bike_metric import BikeMetric
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 import logging
@@ -11,8 +10,8 @@ log = logging.getLogger(__name__)
 
 class CardioWorkout(BaseModel):
     id: Optional[int] = None
-    created_at: Optional[datetime] = datetime.now()
-    workout_date: Optional[datetime] = datetime.now()
+    created_at: Optional[datetime] = Field(default_factory=datetime.now)
+    workout_date: Optional[datetime] = Field(default_factory=datetime.now)
     type: str = 'cycling'
     distance_km: Optional[float] = None
     duration_min: Optional[float] = None
@@ -29,7 +28,7 @@ class CardioWorkout(BaseModel):
         self.distance_km = self.metrics[idx].distance
         self.avg_speed_kmh = sum(m.speed for m in self.metrics) / len(self.metrics)
         delta = self.metrics[idx].measured_at - self.metrics[0].measured_at
-        self.duration_min = round((delta.total_seconds() - 10) / 60, 2)
+        self.duration_min = round((delta.total_seconds() - 5) / 60, 2)
         self.calories = self.metrics[idx].calories
         log.info(f"Distance {self.distance_km} km - Duration {self.duration_min} min - Speed {self.avg_speed_kmh} km/h")
         return True

@@ -14,6 +14,7 @@ class PolarReader:
         self._client: Optional[BleakClient] = None
         self.status = "stopped"
         self.data: PolarData | None = None
+        self.count = 0
 
     def get_heart_rate(self):
         if not self.data:
@@ -52,7 +53,9 @@ class PolarReader:
 
     def _on_notify(self, sender, data: bytearray):
         polar = self.parse_hr(data)
-        # log.info(f"Instant HR: {polar.hr_bpm} bpm  (sensor avg: {polar.avg_hr_bpm} bpm) - contact: {polar.sensor_contact}")
+        if self.count % 40 == 0:
+            log.info(f"Instant HR: {polar.hr_bpm} bpm  (sensor avg: {polar.avg_hr_bpm} bpm) - contact: {polar.sensor_contact}")
+        self.count += 1
 
     async def run(self):
         address = get_settings().POLAR_SENSOR_ADDRESS
