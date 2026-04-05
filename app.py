@@ -4,6 +4,8 @@ import sys
 from contextlib import asynccontextmanager
 from datetime import datetime
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
 from config.settings import get_settings
 from models.doymos_reader import bike_reader
 from routes.workout import router as workout_router
@@ -37,6 +39,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/health", summary="Server health check")
 async def health():

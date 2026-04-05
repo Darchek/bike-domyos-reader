@@ -1,7 +1,7 @@
 import asyncio
 import math
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 from typing import Optional
 from bleak import BleakClient
 from bleak.backends.characteristic import BleakGATTCharacteristic
@@ -13,6 +13,7 @@ from models.bike_metric import BikeMetric
 from models.cardio_workout import CardioWorkout
 from models.passive_scanner import PassiveScanner
 from models.polar_reader import PolarReader
+from models.work_plan import WORK_PLANS
 
 log = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ NOOP = bytes([0xf0, 0xac, 0x9c])
 
 # ── Workout state ─────────────────────────────────────────────────────────────
 
-class WorkoutState:
+class WorkoutState_DEPRECATED:
 
     def __init__(self):
         self.speed_kmh:     float = 0.0
@@ -53,6 +54,7 @@ class WorkoutState:
         self.button:        str   = ""
         self.elapsed_s:     int   = 0
         self.packets:       int   = 0
+        self.active_stages: bool  = True
 
     def calc_watts(self) -> float:
         """Exact formula from domyoselliptical.cpp::watts()"""
@@ -72,6 +74,7 @@ class WorkoutState:
             "distance_km": round(self.distance_km, 2),
             "watts":       round(self.watts, 1),
             "elapsed_s":   self.elapsed_s,
+            "active_stages": self.active_stages
         }
 
 
@@ -81,70 +84,6 @@ def _checksum(buf: bytearray) -> int:
     """Sum of all bytes mod 256, as used by the machine firmware."""
     return sum(buf) & 0xFF
 
-def build_display_packets(state: WorkoutState) -> list[tuple[bytes, bytes]]:
-    """
-    Build the two display-update write packets that keep the machine screen alive.
-    Each is 27 bytes, split into (first 20, last 7) due to BLE MTU.
-    Mirrors updateDisplay() in domyoselliptical.cpp exactly.
-
-    Strategy: start from the exact default byte arrays used in the source,
-    then assign only the fields the source assigns. Every other byte keeps
-    its default value — this avoids off-by-one errors from manual counting.
-
-    Returns: [(pkt_a_part1, pkt_a_part2), (pkt_b_part1, pkt_b_part2)]
-    """
-    elapsed = state.elapsed_s
-
-    # ── Packet A  (0xf0 0xcd)  –  odometer / distance ────────────────────────
-    # Source default:
-    #   {0xf0,0xcd,0x01, 0x00,0x00, 0x01, 0xff×20, 0x00}
-    # display2[3-4] = (uint16_t)(odometer() * 10)  → tenths of km, big-endian
-    dist_raw = int(state.distance_km * 10) & 0xFFFF
-    a = bytearray([0xf0, 0xcd, 0x01, 0x00, 0x00, 0x01, 0xff, 0xff, 0xff, 0xff,
-                   0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                   0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00])
-    a[3] = (dist_raw >> 8) & 0xFF
-    a[4] =  dist_raw       & 0xFF
-    a[26] = _checksum(a[:26])
-
-    # ── Packet B  (0xf0 0xcb)  –  time / speed / HR / cadence / calories ─────
-    # Source default:
-    #   {0xf0,0xcb,0x03, 0x00,0x00, 0xff, 0x01, 0x00,0x00, 0x02,0x01,0x00,
-    #    0x00, 0x00, 0x01,0x00, 0x00, 0x01,0x01, 0x00,0x00, 0x01,
-    #    0xff,0xff,0xff,0xff, 0x00}
-    #
-    # Fields assigned by source (index → meaning):
-    #   [3]  = elapsed // 60        (minutes)
-    #   [4]  = elapsed %  60        (seconds)
-    #   [7]  = (uint16_t)speed >> 8 (speed hi — plain int km/h, NOT *10)
-    #   [8]  = (uint16_t)speed & FF  (speed lo)
-    #   [12] = heart_rate
-    #   [16] = cadence
-    #   [19] = calories >> 8        (calories hi)
-    #   [20] = calories & FF        (calories lo)
-    #   [26] = checksum
-    speed_raw = int(state.speed_kmh) & 0xFFFF  # plain integer km/h, e.g. 8 not 82
-    cal_raw   = state.calories_kcal  & 0xFFFF
-
-    b = bytearray([0xf0, 0xcb, 0x03, 0x00, 0x00, 0xff, 0x01, 0x00, 0x00, 0x02,
-                   0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x01, 0x00,
-                   0x00, 0x01, 0xff, 0xff, 0xff, 0xff, 0x00])
-    b[3]  = (elapsed // 60) & 0xFF
-    b[4]  = (elapsed %  60) & 0xFF
-    b[7]  = (speed_raw >> 8) & 0xFF
-    b[8]  =  speed_raw       & 0xFF
-    b[12] = state.heart_rate  & 0xFF
-    b[16] = state.cadence_rpm & 0xFF
-    b[19] = (cal_raw >> 8) & 0xFF
-    b[20] =  cal_raw        & 0xFF
-    b[26] = _checksum(b[:26])
-
-    # Split each 27-byte packet into (first 20 bytes, last 7 bytes)
-    return [
-        (bytes(a[:20]), bytes(a[20:])),
-        (bytes(b[:20]), bytes(b[20:])),
-    ]
-
 # ── Main reader ───────────────────────────────────────────────────────────────
 
 class DomyosReader:
@@ -153,13 +92,15 @@ class DomyosReader:
 
     def __init__(self):
         self.device = None
-        self.state = WorkoutState()
+        self.start_date = None
+        self.state = BikeMetric()
         self._start: Optional[float] = None
         self._client: Optional[BleakClient] = None
         self._display_tick = 0   # counts 300ms ticks; send display every ~1 s (tick 3)
         self._scanner: PassiveScanner | None = None
         self._polar: PolarReader | None = None
         self.cardio = None
+        self.plan = self.today_get_plan()
 
     def parse_packet(self, data: bytes) -> BikeMetric | None:
         """Parse a 26-byte notification from the machine."""
@@ -176,6 +117,8 @@ class DomyosReader:
         if 1 <= res <= 15:
             metric.resistance = res
         metric.heart_rate = self._polar.get_heart_rate()
+        metric.elapsed_s = time.time() - self._start
+        metric.active_stages = self.state.active_stages
         # metric.heart_rate = data[18]
         # incl = data[21]
         # if 0 <= incl <= 15:
@@ -194,6 +137,9 @@ class DomyosReader:
         if not bike_metric:
             return
 
+        if self.state.active_stages:
+            await self.manage_stages()
+
         # State
         if bike_metric.speed == 0.0 and self._scanner.status != 'idle':
             self._scanner.set_idle()
@@ -208,30 +154,6 @@ class DomyosReader:
 
         # loop = asyncio.get_event_loop()
         # loop.create_task(self._client.write_gatt_char(get_settings().DOMYOS_WRITE, raw, response=False))
-
-    async def send_display(self):
-        """
-        Send both display packets to keep the machine screen alive.
-        Called once per second.
-
-        Each 27-byte packet is split into two chunks (20 + 7 bytes) to respect
-        the BLE MTU, exactly as QZ does.
-
-        Write pacing mirrors QZ's writeCharacteristic():
-          - first chunk:  response=False  (fire-and-forget, fast)
-          - second chunk: response=True   (waits for GATT write-ack before continuing)
-        A short sleep after each full packet gives the machine time to process
-        and update its display before the next packet arrives.
-        """
-        try:
-            if self._client is None or not self._client.is_connected:
-                return
-            for part1, part2 in build_display_packets(self.state):
-                await self._client.write_gatt_char(get_settings().DOMYOS_WRITE, part1, response=True)
-                await self._client.write_gatt_char(get_settings().DOMYOS_WRITE, part2, response=True)
-                await asyncio.sleep(0.05)  # let machine digest before next packet
-        except Exception as e:
-            log.error(f"Error when sending display packets {e}")
 
     async def send_init_seq(self):
         await asyncio.sleep(0.5)
@@ -262,13 +184,13 @@ class DomyosReader:
                 if wait_time > 0:
                     await asyncio.sleep(wait_time)
 
+                self.start_date = datetime.now(timezone.utc)
                 self._start = time.time()
                 await client.start_notify(get_settings().DOMYOS_NOTIFY, self._on_notify)
                 log.info("📬  Subscribed to notify characteristic")
                 await self.send_init_seq()
 
                 # Send an initial display update immediately so screen never blanks
-                # await self.send_display()
                 log.info("✅  Ready — screen + Python both active")
 
                 while client.is_connected:
@@ -305,6 +227,28 @@ class DomyosReader:
 
     # RESISTANCE
 
+    async def manage_stages(self):
+        stage = self.plan.get_stage_by_time(self.state.elapsed_s)
+        if not stage:
+            log.info(f"Stage not found for elapsed seconds: {self.state.elapsed_s}")
+            return False
+        if self.state.resistance == stage.resistance:
+            return True
+        await self.change_resistance(stage.resistance)
+        return True
+
+    async def change_resistance(self, target_level: int):
+        current_resistance = self.state.resistance
+        diff_level = target_level - current_resistance
+        if diff_level == 0:
+            log.info(f"Resistance {target_level} archive successfully")
+        elif diff_level > 0:
+            log.info(f"INCREASE --- Sending resistance directly to {target_level}")
+            await self.increase_resistance(target_level)
+        elif diff_level < 0:
+            log.info(f"DECREASE --- Sending resistance directly to {target_level}")
+            await self.decrease_resistance(target_level)
+
     async def force_resistance(self, level: int):
         """
         Send a resistance command to the Domyos bike.
@@ -337,14 +281,26 @@ class DomyosReader:
 
         log.info(f"🎚️  Resistance set to {level}")
 
-    async def increase_resistance(self):
+    async def increase_resistance(self, target_level=None):
         current = self.state.resistance if self.state.resistance > 0 else 1
-        await self.force_resistance(current + 1)
+        target_level = target_level if target_level else current + 1
+        await self.force_resistance(target_level)
 
-    async def decrease_resistance(self):
+    async def decrease_resistance(self, target_level=None):
         """Decrease resistance by 1 (min 1)."""
-        current = self.state.resistance
-        await self.force_resistance(current - 1)
+        target_level = target_level if target_level else self.state.resistance - 1
+        await self.force_resistance(target_level)
+
+    # WORKOUT PLAN
+
+    def today_get_plan(self):
+        day_num = datetime.today().isoweekday()
+        d = [wp for wp in WORK_PLANS if day_num == wp.day_num]
+        if len(d) > 0:
+            return d[0]
+        return None
+
+
 
 
 bike_reader = DomyosReader()

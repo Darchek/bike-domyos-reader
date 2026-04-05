@@ -8,6 +8,7 @@ from pydantic import BaseModel
 class Stage(BaseModel):
     duration: int
     resistance: int
+    start_time: int = 0
 
 
 class WorkPlan(BaseModel):
@@ -15,11 +16,30 @@ class WorkPlan(BaseModel):
     day_num: int
     stages: List[Stage]
 
+    def __init__(self, id, day_num, stages):
+        super().__init__(**{
+            "id": id,
+            "day_num": day_num,
+            "stages": stages
+        })
+        self.calculate_times()
+
+    def calculate_times(self):
+        duration = 0
+        for s in self.stages:
+            s.start_time = duration
+            duration += s.duration
+
+    def get_stage_by_time(self, seconds):
+        for s in self.stages:
+            if s.start_time <= seconds < (s.start_time + s.duration):
+                return s
+        return None
 
 WORK_PLANS = [
     WorkPlan(
         id=1,
-        day_num=7,
+        day_num=1,
         stages=[
             Stage(duration=40*60, resistance=4),
             Stage(duration=0, resistance=0),
@@ -27,7 +47,7 @@ WORK_PLANS = [
     ),
     WorkPlan(
         id=2,
-        day_num=1,
+        day_num=7,
         stages=[
             Stage(duration=5 * 60, resistance=4),
             # 1
@@ -123,5 +143,3 @@ WORK_PLANS = [
         ]
     )
 ]
-
-print(WORK_PLANS)

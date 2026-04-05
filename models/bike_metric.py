@@ -13,6 +13,8 @@ class BikeMetric(BaseModel):
     heart_rate: Optional[int] = None
     calories: Optional[int] = None
     measured_at: Optional[datetime] = None
+    elapsed_s: Optional[float] = None
+    active_stages: Optional[bool] = True
 
     def same_values(self, metric):
         return (self.speed == metric.speed and self.distance == metric.distance and self.cadence == metric.cadence
