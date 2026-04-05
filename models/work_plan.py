@@ -42,7 +42,7 @@ WORK_PLANS = [
         day_num=1,
         stages=[
             Stage(duration=40*60, resistance=4),
-            Stage(duration=0, resistance=0),
+            Stage(duration=1000, resistance=1),
         ]
     ),
     WorkPlan(
@@ -83,7 +83,7 @@ WORK_PLANS = [
             # rest
             Stage(duration=5 * 60, resistance=4),
             # end
-            Stage(duration=0, resistance=0),
+            Stage(duration=1000, resistance=1),
         ]
     ),
     WorkPlan(
@@ -91,7 +91,7 @@ WORK_PLANS = [
         day_num=3,
         stages=[
             Stage(duration=50*60, resistance=4),
-            Stage(duration=0, resistance=0),
+            Stage(duration=1000, resistance=1),
         ]
     ),
     WorkPlan(
@@ -102,7 +102,7 @@ WORK_PLANS = [
             Stage(duration=10 * 60, resistance=6),
             Stage(duration=10 * 60, resistance=7),
             Stage(duration=5 * 60, resistance=4),
-            Stage(duration=0, resistance=0),
+            Stage(duration=1000, resistance=1),
         ]
     ),
     WorkPlan(
@@ -131,7 +131,7 @@ WORK_PLANS = [
             # rest
             Stage(duration=5 * 60, resistance=4),
             # end
-            Stage(duration=0, resistance=0),
+            Stage(duration=1000, resistance=1),
         ]
     ),
     WorkPlan(
@@ -139,7 +139,7 @@ WORK_PLANS = [
         day_num=6,
         stages=[
             Stage(duration=40 * 60, resistance=3),
-            Stage(duration=0, resistance=0),
+            Stage(duration=1000, resistance=1),
         ]
     )
 ]
