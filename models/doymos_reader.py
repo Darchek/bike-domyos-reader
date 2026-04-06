@@ -100,7 +100,7 @@ class DomyosReader:
         self._scanner: PassiveScanner | None = None
         self._polar: PolarReader | None = None
         self.cardio = None
-        self.plan = self.today_get_plan()
+        self.plan = None
 
     def parse_packet(self, data: bytes) -> BikeMetric | None:
         """Parse a 26-byte notification from the machine."""
@@ -177,7 +177,7 @@ class DomyosReader:
                     for svc in client.services:
                         log.info(f"   {svc.uuid}  {svc.description}")
                     return
-
+                self.today_get_plan()
                 elapsed = time.time() - first_time
                 wait_time = self.CONNECTION_ELAPSED_TIME - elapsed
                 log.info("Elapsed time for connection: {0:.2f}s -  Waiting time: {1:.2f}s".format(elapsed, wait_time))
@@ -297,6 +297,7 @@ class DomyosReader:
         day_num = datetime.today().isoweekday()
         d = [wp for wp in WORK_PLANS if day_num == wp.day_num]
         if len(d) > 0:
+            self.plan = d[0]
             return d[0]
         return None
 
