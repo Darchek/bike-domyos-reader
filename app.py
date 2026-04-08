@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config.settings import get_settings
 from models.doymos_reader import bike_reader
+from models.play_tone import play_sound
 from routes.workout import router as workout_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -73,7 +74,7 @@ if __name__ == "__main__":
     settings = get_settings()
     if len(sys.argv) > 1 and sys.argv[1] == "--prod":
         log.info("Starting production server...")
-        uvicorn.run(app, host=settings.HOST, port=settings.DEV_PORT, reload=False)
+        uvicorn.run(app, host=settings.HOST, port=settings.PROD_PORT, reload=False)
     else:
         log.info("Starting development server...")
         uvicorn.run(app, host=settings.HOST, port=settings.DEV_PORT, reload=False)

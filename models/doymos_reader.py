@@ -12,6 +12,7 @@ import logging
 from models.bike_metric import BikeMetric
 from models.cardio_workout import CardioWorkout
 from models.passive_scanner import PassiveScanner
+from models.play_tone import play_sound
 from models.polar_reader import PolarReader
 from models.work_plan import WORK_PLANS
 
@@ -101,6 +102,7 @@ class DomyosReader:
         self._polar: PolarReader | None = None
         self.cardio = None
         self.plan = None
+        self.session_end = False
 
     def parse_packet(self, data: bytes) -> BikeMetric | None:
         """Parse a 26-byte notification from the machine."""
@@ -177,6 +179,7 @@ class DomyosReader:
                     for svc in client.services:
                         log.info(f"   {svc.uuid}  {svc.description}")
                     return
+                self.session_end = False
                 self.today_get_plan()
                 elapsed = time.time() - first_time
                 wait_time = self.CONNECTION_ELAPSED_TIME - elapsed
@@ -232,6 +235,10 @@ class DomyosReader:
         if not stage:
             log.info(f"Stage not found for elapsed seconds: {self.state.elapsed_s}")
             return False
+        if not self.session_end and stage.resistance == 1:
+            play_sound()
+            self.session_end = True
+            return True
         if self.state.resistance == stage.resistance:
             return True
         await self.change_resistance(stage.resistance)
