@@ -67,26 +67,22 @@ WORK_PLANS = [
             Stage(duration=30, resistance=11),
             Stage(duration=90, resistance=3),
             # cool down
-            Stage(duration=5 * 60, resistance=3),
-            # end
-            Stage(duration=1000, resistance=1),
+            Stage(duration=5 * 60, resistance=3)
         ]
     ),
     WorkPlan(
         id=3,
         day_num=3,
         stages=[
-            Stage(duration=55 * 60, resistance=4),
-            Stage(duration=1000, resistance=1),
+            Stage(duration=55 * 60, resistance=4)
         ]
     ),
     WorkPlan(
         id=4,
         day_num=4,
         stages=[
-            Stage(duration=70 * 60, resistance=4),
-            Stage(duration=1000, resistance=1),
-        ]
+            Stage(duration=70 * 60, resistance=4)
+    ]
     ),
     WorkPlan(
         id=5,
@@ -118,25 +114,21 @@ WORK_PLANS = [
             Stage(duration=30, resistance=11),
             Stage(duration=90, resistance=3),
             # cool down
-            Stage(duration=5 * 60, resistance=3),
-            # end
-            Stage(duration=1000, resistance=1),
+            Stage(duration=5 * 60, resistance=3)
         ]
     ),
     WorkPlan(
         id=6,
         day_num=6,
         stages=[
-            Stage(duration=75 * 60, resistance=4),
-            Stage(duration=1000, resistance=1),
+            Stage(duration=75 * 60, resistance=4)
         ]
     ),
     WorkPlan(
         id=7,
         day_num=7,
         stages=[
-            Stage(duration=40 * 60, resistance=3),
-            Stage(duration=1000, resistance=1),
+            Stage(duration=40 * 60, resistance=3)
         ]
     )
 ]

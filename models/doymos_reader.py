@@ -203,6 +203,8 @@ class DomyosReader:
             await self.save_workout()
             self._scanner.set_stopped()
             self._client = None
+            self.session_end = False
+            self.cardio = CardioWorkout()
         except Exception as e:
             log.error(f"Error when connecting to bluetooth client: {e}")
 
@@ -231,13 +233,13 @@ class DomyosReader:
     # RESISTANCE
 
     async def manage_stages(self):
+        if self.session_end:
+            return True
         stage = self.plan.get_stage_by_time(self.state.elapsed_s)
         if not stage:
-            log.info(f"Stage not found for elapsed seconds: {self.state.elapsed_s}")
-            return False
-        if not self.session_end and stage.resistance == 1:
-            play_sound()
+            log.info(f"Stages completed! {self.state.elapsed_s}")
             self.session_end = True
+            play_sound()
             return True
         if self.state.resistance == stage.resistance:
             return True
