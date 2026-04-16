@@ -204,6 +204,7 @@ class DomyosReader:
             self._scanner.set_stopped()
             self._client = None
             self.session_end = False
+            self.state = BikeMetric()
             self.cardio = CardioWorkout()
         except Exception as e:
             log.error(f"Error when connecting to bluetooth client: {e}")
