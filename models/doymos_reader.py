@@ -242,12 +242,18 @@ class DomyosReader:
             self.session_end = True
             play_sound()
             return True
-        if self.state.resistance == stage.resistance:
+        """if self.state.resistance == stage.resistance:
+            return True"""
+        if self.state.stage_id == stage.stage_id:
             return True
-        await self.change_resistance(stage.resistance)
+        await self.change_resistance(stage)
         return True
 
-    async def change_resistance(self, target_level: int):
+    async def change_resistance(self, stage):
+        # Update state
+        self.state.stage_id = stage.stage_id
+        target_level = stage.resistance
+
         current_resistance = self.state.resistance
         diff_level = target_level - current_resistance
         if diff_level == 0:

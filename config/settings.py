@@ -6,6 +6,10 @@ class Settings(BaseSettings):
     # N8N
     BACKEND_URL: str = ""
 
+    # HOMEASSISTANT
+    HOMEASSISTANT_WEBHOOK_URL: str = ""
+    HA_TURN_ON_FAN_PATH: str = ""
+
     # DATABASE
     DATABASE_URL: str = ""
 

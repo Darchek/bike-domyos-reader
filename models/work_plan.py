@@ -1,11 +1,16 @@
 from typing import List
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+import secrets
 
+
+def generate_hex_id() -> str:
+    return secrets.token_hex(3)  # 3 bytes = 6 hex characters
 
 #  datetime.today().isoweekday()
 #  # 1=Monday, 7=Sunday
 
 class Stage(BaseModel):
+    id: str = Field(default_factory=generate_hex_id)
     duration: int
     resistance: int
     start_time: int = 0
@@ -74,14 +79,14 @@ WORK_PLANS = [
         id=3,
         day_num=3,
         stages=[
-            Stage(duration=55 * 60, resistance=4)
+            Stage(duration=55 * 60, resistance=3)
         ]
     ),
     WorkPlan(
         id=4,
         day_num=4,
         stages=[
-            Stage(duration=70 * 60, resistance=4)
+            Stage(duration=70 * 60, resistance=3)
     ]
     ),
     WorkPlan(
@@ -121,7 +126,7 @@ WORK_PLANS = [
         id=6,
         day_num=6,
         stages=[
-            Stage(duration=75 * 60, resistance=4)
+            Stage(duration=75 * 60, resistance=3)
         ]
     ),
     WorkPlan(

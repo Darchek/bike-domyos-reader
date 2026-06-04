@@ -5,10 +5,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
 from config.settings import get_settings
 from models.doymos_reader import bike_reader
-from models.play_tone import play_sound
 from routes.workout import router as workout_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

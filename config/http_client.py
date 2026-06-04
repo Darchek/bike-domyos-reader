@@ -28,3 +28,16 @@ class HttpClient:
         except Exception as e:
             log.error(f"Request error: {e}")
             return False
+
+    @staticmethod
+    async def turn_on_fan():
+        try:
+            response = requests.post(f"{get_settings().HOMEASSISTANT_WEBHOOK_URL}/"
+                                     f"{get_settings().HA_TURN_ON_FAN_PATH}", verify=False, timeout=10)
+            log.info(f"Fan on!")
+            return True
+        except Exception as e:
+            log.error(f"Request error: {e}")
+            return False
+
+

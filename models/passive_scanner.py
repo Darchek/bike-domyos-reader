@@ -19,6 +19,7 @@ class PassiveScanner:
             log.info(f"Bike detected: {device.address}")
             self.set_running()
             asyncio.create_task(HttpClient.start_bike_session())
+            asyncio.create_task(HttpClient.turn_on_fan())
             await self.start_reader(device)
 
     async def start(self):

@@ -15,6 +15,7 @@ class BikeMetric(BaseModel):
     measured_at: Optional[datetime] = None
     elapsed_s: Optional[float] = None
     active_stages: Optional[bool] = True
+    stage_id: Optional[str] = None
 
     def same_values(self, metric):
         return (self.speed == metric.speed and self.distance == metric.distance and self.cadence == metric.cadence
